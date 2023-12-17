@@ -5,6 +5,7 @@ const cookieToken = require("../utils/cookieToken")
 const fileUpload = require('express-fileupload')
 const cloudinary = require('cloudinary')
 const mailHelper = require("../utils/emailHelper")
+const crypto = require('crypto')
 
 exports.signup = BigPromise(async (req, res, next) => {
     // let result;
@@ -79,39 +80,91 @@ exports.logout = BigPromise(async (req, res, next) => {
 })
 
 exports.forgotPassword = BigPromise(async (req, res, next) => {
-    const { email } = req.body
+    // collect email
+    const { email } = req.body;
+    console.log(email);
+    // find user in database
+    const user = await User.findOne({ email });
 
-    //check if email is available in DB
-    const user = await User.findOne({ email })
-
+    // if user not found in database
     if (!user) {
-        return next(new CustomError("Email not found as registered user", 400))
+        return next(new CustomError("Email not found as registered", 400));
     }
 
-    const forgotToken = user.getForgotPasswordToken()
+    //get token from user model methods
+    const forgotToken = user.getForgotPasswordToken();
 
-    await user.save({ validateBeforeSave: false })
+    // save user fields in DB
+    await user.save({ validateBeforeSave: false });
 
-    const myUrl = `${req.protocol}://${req.get("host")}/password/reset/${forgotToken}`
+    // create a URL
+    const myUrl = `${req.protocol}://${req.get("host")}/api/v1/password/reset/${forgotToken}`;
 
-    const message = `Copy Paste this link in your URL and Hit Enter \n \n ${myUrl}`
+    //URL for deployment as front end might be running at different URL
+    // const myUrl = `${process.env.FRONT_END}/password/reset/${forgotToken}`;
 
+    // craft a message
+    const message = `Copy paste this link in your URL and hit enter \n\n ${myUrl}`;
+
+    // attempt to send email
     try {
         await mailHelper({
             email: user.email,
-            subject: "YASH TStore - Password Reset Email",
-            message: message
-        })
+            subject: "Yash TStore - Password reset email",
+            message,
+        });
 
+        // json reponse if email is success
         res.status(200).json({
-            success: true,
-            message: "Email sent successfully"
-        })
+            succes: true,
+            message: "Email sent successfully",
+        });
     } catch (error) {
-        user.forgotPasswordToken = undefined
-        user.forgotPasswordExpiry = undefined
-        await user.save({ validateBeforeSave: false })
+        // reset user fields if things goes wrong
+        user.forgotPasswordToken = undefined;
+        user.forgotPasswordExpiry = undefined;
+        await user.save({ validateBeforeSave: false });
 
-        return next(new CustomError(error.message, 500))
+        // send error response
+        return next(new CustomError(error.message, 500));
     }
-})
+});
+
+exports.passwordReset = BigPromise(async (req, res, next) => {
+    //get token from params
+    const token = req.params.token;
+
+    // hash the token as db also stores the hashed version
+    const encryToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    // find user based on hased on token and time in future
+    const user = await User.findOne({
+        encryToken,
+        forgotPasswordExpiry: { $gt: Date.now() },
+    });
+
+    if (!user) {
+        return next(new CustomError("Token is invalid or expired", 400));
+    }
+
+    // check if password and conf password matched
+    if (req.body.password !== req.body.confirmPassword) {
+        return next(
+            new CustomError("password and confirm password do not match", 400)
+        );
+    }
+
+    // update password field in DB
+    user.password = req.body.password;
+
+    // reset token fields
+    user.forgotPasswordToken = undefined;
+    user.forgotPasswordExpiry = undefined;
+
+    // save the user
+    await user.save();
+
+    // send a JSON response OR send token
+
+    cookieToken(user, res);
+});
