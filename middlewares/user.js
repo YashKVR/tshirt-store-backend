@@ -24,3 +24,13 @@ exports.isLoggedIn = BigPromise(async (req, res, next) => {
 
     next();
 });
+
+// Here we are accepting and spreading roles array although we are getting only one value, because that gives access to .includes and all functionality
+exports.customRole = (...roles) => {
+    return (req, res, next) => {
+        if (!roles.includes(req.user.role)) {
+            return next(new CustomError("You are not allowed for this resource", 403))
+        }
+        next()
+    }
+}
