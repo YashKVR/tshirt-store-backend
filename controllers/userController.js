@@ -168,3 +168,75 @@ exports.passwordReset = BigPromise(async (req, res, next) => {
 
     cookieToken(user, res);
 });
+
+exports.getLoggedInUserDetails = BigPromise(async (req, res, next) => {
+    //req.user doesn't exist, we have injected it in the user middleware
+    const user = await User.findById(req.user.id)
+
+    res.status(200).json({
+        success: true,
+        user
+    })
+});
+
+exports.changePassword = BigPromise(async (req, res, next) => {
+    const userId = req.user.id
+
+    const user = await User.findById(userId).select("+password")
+
+    const isCorrectOldPassword = await user.isValidatedPassword(req.body.oldPassword)
+
+    if (!isCorrectOldPassword) {
+        return next(new CustomError('old password is incorrect'), 500)
+    }
+
+    user.password = req.body.password
+
+    await user.save()
+
+    cookieToken(user, res)
+})
+
+exports.updateUserDetails = BigPromise(async (req, res, next) => {
+    //check if all field are available, if any field is not there, it will be updated as empty
+    if (!req.body.name || !req.body.email) {
+        return next(new CustomError('All fields should be returned while updating'), 500)
+    }
+
+    const newData = {
+        name: req.body.name,
+        email: req.body.email
+    };
+
+    if (req.files) {
+        const user = await User.findById(req.user.id)
+
+        const imageId = user.photo.id
+
+        // delete photo on cloudinary
+        const resp = await cloudinary.v2.uploader.destroy(imageId)
+
+        //upload the new photo
+        const result = await cloudinary.v2.uploader.upload(req.files.photo.tempFilePath, {
+            folder: "user",
+            width: 150,
+            crop: "scale"
+        })
+
+        newData.photo = {
+            id: result.public_id,
+            secure_url: result.secure_url
+        }
+
+    }
+
+    const user = await User.findByIdAndUpdate(req.user.id, newData, {
+        new: true,
+        runValidators: true,
+        useFindAndModify: false
+    })
+
+    res.status(200).json({
+        succes: true,
+    })
+})

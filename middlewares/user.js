@@ -1,20 +1,26 @@
-const User = require('../models')
-const BigPromise = require("./bigPromise")
-const CustomError = require("../utils/customError")
-const jwt = require('jsonwebtoken')
+const User = require("../models/user");
+const BigPromise = require("../middlewares/bigPromise");
+const CustomError = require("../utils/customError");
+const jwt = require("jsonwebtoken");
 
 exports.isLoggedIn = BigPromise(async (req, res, next) => {
-    const token = req.cookies.token || req.header("Authorization").replace('Bearer ', '')
+    // const token = req.cookies.token || req.header("Authorization").replace("Bearer ", "");
 
-    if (!token) {
-        return next(new CustomError('Login First to access this page'), 401)
+    // check token first in cookies
+    let token = req.cookies.token;
+
+    // if token not found in cookies, check if header contains Auth field
+    if (!token && req.header("Authorization")) {
+        token = req.header("Authorization").replace("Bearer ", "");
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    if (!token) {
+        return next(new CustomError("Login first to access this page", 401));
+    }
 
-    // req.user can be called any thing like req.superman. I am injecting my property to req.
-    req.user = User.findById(decoded.id)
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    next()
+    req.user = await User.findById(decoded.id);
 
-})
+    next();
+});
