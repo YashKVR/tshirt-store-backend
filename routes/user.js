@@ -1,5 +1,5 @@
 const express = require('express');
-const router = express.Router()
+const router = express.Router();
 
 const { signup, login, logout, forgotPassword, passwordReset, getLoggedInUserDetails, changePassword, updateUserDetails, adminAllUser, managerAllUser, adminGetOneUser, adminUpdateOneUserDetails, adminDeleteOneUser } = require("../controllers/userController")
 const { isLoggedIn, customRole } = require("../middlewares/user")
